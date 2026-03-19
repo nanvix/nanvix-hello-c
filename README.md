@@ -1,10 +1,12 @@
 # Hello World for Nanvix (C)
 
 A minimal example showing how to compile and run a "Hello World" C application on
-[Nanvix](https://github.com/nanvix/nanvix).
+[Nanvix](https://github.com/nanvix/nanvix), using the
+[ZScript](https://github.com/nanvix/zutils) build system.
 
 ## Prerequisites
 
+- [Python 3.12+](https://www.python.org/downloads/)
 - [Docker](https://docs.docker.com/engine/install/)
 - [GitHub CLI](https://cli.github.com/) (`gh`)
 - [KVM](https://github.com/nanvix/nanvix/blob/main/doc/setup.md#4-setup-kvm) enabled
@@ -12,14 +14,14 @@ A minimal example showing how to compile and run a "Hello World" C application o
 ## Quick Start
 
 ```bash
-# 1. Download the latest Nanvix release (provides nanvixd.elf, libposix.a, and user.ld).
-make init
+# 1. Download the Nanvix sysroot (provides nanvixd.elf, libposix.a, user.ld).
+./z setup
 
-# 2. Build hello-c.elf using the Nanvix minimal Docker image.
-make
+# 2. Cross-compile main.c → hello-c.elf.
+./z build
 
-# 3. Run on Nanvix.
-make run
+# 3. Run smoke, integration, and functional tests on Nanvix.
+./z test
 ```
 
 You should see:
@@ -32,12 +34,12 @@ Hello, World from Nanvix!
 
 ```plain
 .
-├── main.c          # Hello World source code
-├── Makefile        # Build rules, init target, and cross-compilation
-├── Dockerfile      # Builds hello-c.elf inside the Nanvix Docker image
-└── .nanvix/        # Nanvix release artifacts (created by 'make init')
-    ├── bin/        # nanvixd.elf, kernel.elf, uservm.elf, linuxd.elf
-    └── lib/        # libposix.a, user.ld
+├── main.c            # Hello World source code
+├── Makefile.nanvix   # Cross-compilation rules, test targets, and toolchain detection
+├── z                 # Bootstrap wrapper (Bash) — finds Python, creates venv, runs z.py
+├── z.ps1             # Bootstrap wrapper (PowerShell)
+└── .nanvix/
+    └── z.py          # ZScript build script (setup, build, test, clean)
 ```
 
 ## How It Works
@@ -45,20 +47,28 @@ Hello, World from Nanvix!
 ### Cross-Compilation
 
 Nanvix applications are cross-compiled using the `i686-nanvix-gcc` toolchain, which targets the
-Nanvix microkernel. The
-[`nanvix/toolchain`](https://hub.docker.com/r/nanvix/toolchain) minimal Docker image
-provides the full cross-compiler toolchain.
+Nanvix microkernel. If the native toolchain is not installed at `/opt/nanvix`, the build
+automatically falls back to the
+[`nanvix/toolchain`](https://hub.docker.com/r/nanvix/toolchain) minimal Docker image.
 
 The application is linked against:
 
-- **`libposix.a`** — Nanvix POSIX compatibility layer (from the Nanvix release)
+- **`libposix.a`** — Nanvix POSIX compatibility layer (from the Nanvix sysroot)
 - **`libc.a`** — Newlib C library (from the toolchain)
-- **`user.ld`** — Linker script defining the Nanvix user-space memory layout (from the Nanvix release)
+- **`user.ld`** — Linker script defining the Nanvix user-space memory layout (from the Nanvix sysroot)
 
 ### Running
 
 `nanvixd.elf` is the Nanvix daemon that boots a microkernel VM and runs your application inside it.
-The `-console-file /dev/stdout` flag redirects the application's console output to the terminal.
+Functional tests invoke `nanvixd.elf` and verify the expected output appears.
+
+### Build System
+
+The `./z` wrapper bootstraps a Python virtual environment, installs
+[nanvix-zutil](https://github.com/nanvix/zutils), and delegates to `.nanvix/z.py`.
+The build script drives `Makefile.nanvix` with the correct toolchain and sysroot paths.
+
+Available commands: `./z setup`, `./z build`, `./z test`, `./z clean`, `./z help`.
 
 ## License
 

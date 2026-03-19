@@ -1,8 +1,15 @@
 # Copyright(c) The Maintainers of Nanvix.
 # Licensed under the MIT License.
 
+# Build artifacts
 *.o
 *.elf
-.nanvix/
-build/
+
+# ZScript venv and cached state (but track .nanvix/z.py)
+.nanvix/venv/
+.nanvix/env.json
+.nanvix/cache/
+.nanvix/sysroot/
+
+# Logs
 logs/
