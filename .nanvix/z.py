@@ -10,10 +10,7 @@ Usage (from repository root):
     ./z clean      # Remove build artifacts
 """
 
-from nanvix_zutil import CFG_GH_TOKEN, CFG_SYSROOT, Sysroot, ZScript, log
-
-# Exit codes (mirrors nanvix-zutil convention).
-_EXIT_MISSING_DEP = 3
+from nanvix_zutil import CFG_GH_TOKEN, CFG_SYSROOT, EXIT_MISSING_DEP, Sysroot, ZScript, log
 
 # Makefile variable names (build-system-specific).
 _MAKE_VAR_CONFIG = "CONFIG_NANVIX"
@@ -32,7 +29,7 @@ class HelloCBuild(ZScript):
         if not nanvix_sysroot:
             log.fatal(
                 f"{CFG_SYSROOT} is not set.",
-                code=_EXIT_MISSING_DEP,
+                code=EXIT_MISSING_DEP,
                 hint="Run `./z setup` first to download the sysroot.",
             )
 
