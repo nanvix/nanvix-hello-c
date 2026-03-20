@@ -17,7 +17,12 @@
 
 NANVIX_DOCKER_IMAGE ?= nanvix/toolchain:latest-minimal
 
-ifdef CONFIG_NANVIX
+# Platform parameters (passed by ./z, used for future test configuration).
+PLATFORM       ?= hyperlight
+PROCESS_MODE   ?= multi-process
+MEMORY_SIZE    ?= 128mb
+
+ifeq ($(CONFIG_NANVIX),y)
   NANVIX_TOOLCHAIN ?= /opt/nanvix
   NANVIX_HOME ?= $(HOME)/nanvix
 

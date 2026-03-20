@@ -7,7 +7,7 @@ A minimal example showing how to compile and run a "Hello World" C application o
 ## Prerequisites
 
 - [Python 3.12+](https://www.python.org/downloads/)
-- [Docker](https://docs.docker.com/engine/install/)
+- [Docker](https://docs.docker.com/engine/install/) *(optional — used as fallback when the native toolchain is not installed)*
 - [GitHub CLI](https://cli.github.com/) (`gh`)
 - [KVM](https://github.com/nanvix/nanvix/blob/main/doc/setup.md#4-setup-kvm) enabled
 
@@ -22,6 +22,14 @@ A minimal example showing how to compile and run a "Hello World" C application o
 
 # 3. Run smoke, integration, and functional tests on Nanvix.
 ./z test
+```
+
+On Windows (PowerShell 7+):
+
+```powershell
+./z.ps1 setup
+./z.ps1 build
+./z.ps1 test
 ```
 
 You should see:
