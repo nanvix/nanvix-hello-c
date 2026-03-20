@@ -23,8 +23,8 @@ _MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
 class HelloCBuild(ZScript):
     """Build script for nanvix/nanvix-hello-c."""
 
-    def _make(self, *targets: str, extra_vars: dict[str, str] | None = None) -> None:
-        """Run ``make -f Makefile.nanvix`` with standard Nanvix variables."""
+    def _make_args(self, *targets: str) -> list[str]:
+        """Build the common ``make -f Makefile.nanvix`` argument list."""
         nanvix_sysroot = self.config.get(CFG_SYSROOT, "")
         if not nanvix_sysroot:
             log.fatal(
@@ -33,18 +33,20 @@ class HelloCBuild(ZScript):
                 hint="Run `./z setup` first to download the sysroot.",
             )
 
-        cmd: list[str] = [
-            "make",
-            "-f",
-            "Makefile.nanvix",
+        args = [
+            "make", "-f", "Makefile.nanvix",
             f"{_MAKE_VAR_CONFIG}=y",
             f"{_MAKE_VAR_HOME}={nanvix_sysroot}",
         ]
-        if extra_vars:
-            for key, val in extra_vars.items():
-                cmd.append(f"{key}={val}")
-        cmd.extend(targets)
-        self.run(*cmd, cwd=self.repo_root)
+
+        args.extend([
+            f"{_MAKE_VAR_PLATFORM}={self.config.machine}",
+            f"{_MAKE_VAR_PROCESS_MODE}={self.config.deployment_mode}",
+            f"{_MAKE_VAR_MEMORY_SIZE}={self.config.memory_size}",
+        ])
+
+        args.extend(targets)
+        return args
 
     def setup(self) -> None:
         """Download the Nanvix sysroot and persist its path."""
@@ -55,26 +57,27 @@ class HelloCBuild(ZScript):
             tag="latest",
             gh_token=self.config.get(CFG_GH_TOKEN),
         )
-        sysroot.verify(list(self.SYSROOT_REQUIRED_FILES))
+        sysroot.verify(self.sysroot_required_files())
         self.config.set(CFG_SYSROOT, str(sysroot.path))
         self.config.save()
 
     def build(self) -> None:
         """Cross-compile main.c into hello-c.elf for Nanvix."""
-        self._make("all")
+        self.run(*self._make_args("all"), cwd=self.repo_root)
 
     def test(self) -> None:
-        """Run the test suite (smoke + integration + functional)."""
-        platform_vars = {
-            _MAKE_VAR_PLATFORM: self.config.machine,
-            _MAKE_VAR_PROCESS_MODE: self.config.deployment_mode,
-            _MAKE_VAR_MEMORY_SIZE: self.config.memory_size,
-        }
-        self._make("test", extra_vars=platform_vars)
+        """Run the hello-c test suite.
+
+        Without targets, runs the full suite (smoke + integration + functional).
+        With targets (e.g. ``./z test -- test-smoke test-integration``), passes
+        them directly to the Makefile.
+        """
+        targets = self.targets if self.targets else ["test"]
+        self.run(*self._make_args(*targets), cwd=self.repo_root)
 
     def clean(self) -> None:
         """Remove build artifacts."""
-        self.run("make", "-f", "Makefile.nanvix", "clean", cwd=self.repo_root)
+        self.run(*self._make_args("clean"), cwd=self.repo_root)
 
 
 if __name__ == "__main__":

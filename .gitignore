@@ -13,3 +13,6 @@
 
 # Logs
 logs/
+
+# Release artifacts
+dist/
