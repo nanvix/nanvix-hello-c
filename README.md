@@ -12,7 +12,7 @@ A minimal example showing how to compile and run a "Hello World" C application o
 ## Quick Start
 
 ```bash
-# 1. Download the pinned Nanvix release (provides nanvixd.elf, libposix.a, and user.ld).
+# 1. Download the Nanvix release.
 make init
 
 # 2. Build hello-c.elf using the Nanvix toolchain Docker image.
