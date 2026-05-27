@@ -24,6 +24,9 @@ NANVIX_MEMORY_SIZE ?= 128mb
 # Nanvix target machine (used to select the release asset).
 MACHINE := microvm
 
+# Nanvix deployment mode (used to select the release asset).
+DEPLOYMENT_MODE := multi-process
+
 # Toolchain directory (set by the Docker image).
 TOOLCHAIN_DIR ?= /opt/nanvix
 
@@ -123,7 +126,7 @@ $(LIBPOSIX_A):
 	RELEASE_INFO=$$(gh release view "$(NANVIX_RELEASE)" --repo "$(NANVIX_REPO)" --json tagName,assets); \
 	TAG_NAME=$$(echo "$$RELEASE_INFO" | jq -r '.tagName'); \
 	ASSET_NAME=$$(echo "$$RELEASE_INFO" | jq -r \
-		'[.assets[] | select(.name | startswith("nanvix-x86-$(MACHINE)-multi-process-release-$(NANVIX_MEMORY_SIZE)"))][0].name'); \
+		'[.assets[] | select(.name | startswith("nanvix-x86-$(MACHINE)-$(DEPLOYMENT_MODE)-release-$(NANVIX_MEMORY_SIZE)"))][0].name'); \
 	if [ -z "$$ASSET_NAME" ] || [ "$$ASSET_NAME" = "null" ]; then \
 		echo "ERROR: Could not find a microvm multi-process release asset." >&2; \
 		exit 1; \
