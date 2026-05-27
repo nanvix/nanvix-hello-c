@@ -33,11 +33,14 @@ CFLAGS += -m32 -march=pentiumpro -Wa,-march=pentiumpro
 CFLAGS += -Wall -Wextra -Werror
 CFLAGS += -O2
 
+# Nanvix POSIX library (sentinel for a populated $(NANVIX_DIR)).
+LIBPOSIX_A := $(NANVIX_DIR)/lib/libposix.a
+
 # Linker flags.
 LDFLAGS := -z noexecstack -T $(NANVIX_DIR)/lib/user.ld
 
 # Libraries (order matters — use grouping to resolve circular dependencies).
-LIBRARIES := -Wl,--start-group $(NANVIX_DIR)/lib/libposix.a $(TOOLCHAIN_DIR)/i686-nanvix/lib/libc.a -Wl,--end-group
+LIBRARIES := -Wl,--start-group $(LIBPOSIX_A) $(TOOLCHAIN_DIR)/i686-nanvix/lib/libc.a -Wl,--end-group
 
 # Build output directory.
 BUILD_DIR := build
@@ -68,7 +71,7 @@ all: $(BUILD_DIR)/$(BINARY)
 ifeq ($(INSIDE_CONTAINER),)
 # Build hello-c.elf inside the Nanvix toolchain Docker image, bind-mounting the
 # workspace so artifacts land directly in $(BUILD_DIR)/.
-$(BUILD_DIR)/$(BINARY): $(SOURCES) Makefile $(NANVIX_DIR)/lib/libposix.a | $(BUILD_DIR)
+$(BUILD_DIR)/$(BINARY): $(SOURCES) Makefile $(LIBPOSIX_A) | $(BUILD_DIR)
 	docker run --rm \
 		-u $$(id -u):$$(id -g) \
 		-e IN_NANVIX_CONTAINER=1 \
@@ -106,9 +109,9 @@ $(BUILD_DIR):
 # Init — download the latest Nanvix release and resolve the Docker image tag
 #===============================================================================
 
-init: $(NANVIX_DIR)/lib/libposix.a
+init: $(LIBPOSIX_A)
 
-$(NANVIX_DIR)/lib/libposix.a:
+$(LIBPOSIX_A):
 	@echo "Downloading Nanvix release $(NANVIX_RELEASE)..."
 	@set -e; \
 	RELEASE_INFO=$$(gh release view "$(NANVIX_RELEASE)" --repo "$(NANVIX_REPO)" --json tagName,assets); \
