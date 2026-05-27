@@ -1,0 +1,74 @@
+# Copyright(c) The Maintainers of Nanvix.
+# Licensed under the MIT License.
+
+name: Nanvix CI
+
+on:
+  schedule:
+    # 06:00 America/Los_Angeles (PST) / 07:00 America/Los_Angeles (PDT)
+    - cron: "0 14 * * *"
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name || github.ref || 'default' }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-run:
+    name: Build and Run (${{ matrix.memory-size }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        memory-size: ["128mb", "256mb"]
+    env:
+      NANVIX_MEMORY_SIZE: ${{ matrix.memory-size }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable KVM access for the runner
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Download Nanvix release (make init)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: make init
+
+      - name: Build (make)
+        run: make
+
+      - name: Run on Nanvix (make run)
+        run: |
+          set -o pipefail
+          make run 2>&1 | tee run.log
+          grep -q "Hello, World from Nanvix!" run.log
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hello-c-${{ matrix.memory-size }}
+          path: |
+            build/
+            run.log
+          if-no-files-found: ignore
