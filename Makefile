@@ -22,10 +22,27 @@ NANVIX_DIR ?= .nanvix
 NANVIX_MEMORY_SIZE ?= 128mb
 
 # Toolchain directory (set by the Docker image).
-TOOLCHAIN_DIR ?= /opt/nanvix
+NANVIX_TOOLCHAIN_DIR ?= /opt/nanvix
+
+#===============================================================================
+# Constants
+#===============================================================================
+
+# Nanvix target machine (used to select the release asset).
+NANVIX_MACHINE := microvm
+
+# Nanvix deployment mode (used to select the release asset).
+NANVIX_DEPLOYMENT_MODE := multi-process
+
+# Build output directory.
+BUILD_DIR := build
+
+#===============================================================================
+# Toolchain Configuration
+#===============================================================================
 
 # Cross-compiler and tools.
-CC := $(TOOLCHAIN_DIR)/bin/i686-nanvix-gcc
+CC := $(NANVIX_TOOLCHAIN_DIR)/bin/i686-nanvix-gcc
 
 # Compiler flags.
 CFLAGS := -std=c17
@@ -33,14 +50,21 @@ CFLAGS += -m32 -march=pentiumpro -Wa,-march=pentiumpro
 CFLAGS += -Wall -Wextra -Werror
 CFLAGS += -O2
 
+# Nanvix POSIX library (sentinel for a populated $(NANVIX_DIR)).
+LIBPOSIX_A := $(NANVIX_DIR)/lib/libposix.a
+
+# C standard library (provided by the toolchain).
+LIBC_A := $(NANVIX_TOOLCHAIN_DIR)/i686-nanvix/lib/libc.a
+
 # Linker flags.
 LDFLAGS := -z noexecstack -T $(NANVIX_DIR)/lib/user.ld
 
 # Libraries (order matters — use grouping to resolve circular dependencies).
-LIBRARIES := -Wl,--start-group $(NANVIX_DIR)/lib/libposix.a $(TOOLCHAIN_DIR)/i686-nanvix/lib/libc.a -Wl,--end-group
+LIBRARIES := -Wl,--start-group $(LIBPOSIX_A) $(LIBC_A) -Wl,--end-group
 
-# Build output directory.
-BUILD_DIR := build
+#===============================================================================
+# Build Artifacts
+#===============================================================================
 
 # Source and object files.
 SOURCES := main.c
@@ -68,13 +92,13 @@ all: $(BUILD_DIR)/$(BINARY)
 ifeq ($(INSIDE_CONTAINER),)
 # Build hello-c.elf inside the Nanvix toolchain Docker image, bind-mounting the
 # workspace so artifacts land directly in $(BUILD_DIR)/.
-$(BUILD_DIR)/$(BINARY): $(SOURCES) Makefile $(NANVIX_DIR)/lib/libposix.a | $(BUILD_DIR)
+$(BUILD_DIR)/$(BINARY): $(SOURCES) Makefile $(LIBPOSIX_A) | $(BUILD_DIR)
 	docker run --rm \
 		-u $$(id -u):$$(id -g) \
 		-e IN_NANVIX_CONTAINER=1 \
 		-v $(CURDIR):/workspace \
 		-w /workspace \
-		$$(cat $(NANVIX_DIR)/.docker-image) \
+		$(NANVIX_TOOLCHAIN_IMAGE) \
 		make compile
 endif
 
@@ -103,36 +127,19 @@ $(BUILD_DIR):
 	@mkdir -p $@
 
 #===============================================================================
-# Init — download the latest Nanvix release and resolve the Docker image tag
+# Init — download the Nanvix release
 #===============================================================================
 
-init: $(NANVIX_DIR)/lib/libposix.a
+init: $(LIBPOSIX_A)
 
-$(NANVIX_DIR)/lib/libposix.a:
-	@echo "Downloading Nanvix release $(NANVIX_RELEASE)..."
-	@set -e; \
-	RELEASE_INFO=$$(gh release view "$(NANVIX_RELEASE)" --repo "$(NANVIX_REPO)" --json tagName,assets); \
-	TAG_NAME=$$(echo "$$RELEASE_INFO" | jq -r '.tagName'); \
-	ASSET_NAME=$$(echo "$$RELEASE_INFO" | jq -r \
-		'[.assets[] | select(.name | startswith("nanvix-x86-microvm-multi-process-release-$(NANVIX_MEMORY_SIZE)"))][0].name'); \
-	if [ -z "$$ASSET_NAME" ] || [ "$$ASSET_NAME" = "null" ]; then \
-		echo "ERROR: Could not find a microvm multi-process release asset." >&2; \
-		exit 1; \
-	fi; \
-	echo "  Release: $$TAG_NAME"; \
-	echo "  Asset: $$ASSET_NAME"; \
-	DOCKER_IMAGE="$(NANVIX_TOOLCHAIN_IMAGE)"; \
-	echo "  Docker image: $$DOCKER_IMAGE"; \
-	TMPDIR=$$(mktemp -d); \
-	gh release download "$(NANVIX_RELEASE)" --repo "$(NANVIX_REPO)" \
-		--pattern "$$ASSET_NAME" \
-		--dir "$$TMPDIR"; \
-	mkdir -p $(NANVIX_DIR); \
-	tar xjf "$$TMPDIR/$$ASSET_NAME" -C $(NANVIX_DIR) --strip-components=1; \
-	rm -rf "$$TMPDIR"; \
-	echo "$$DOCKER_IMAGE" > $(NANVIX_DIR)/.docker-image; \
-	echo ""; \
-	echo "Done. Nanvix release extracted to $(NANVIX_DIR)/."
+$(LIBPOSIX_A):
+	./get-nanvix.py \
+		--repo "$(NANVIX_REPO)" \
+		--release "$(NANVIX_RELEASE)" \
+		--machine "$(NANVIX_MACHINE)" \
+		--deployment-mode "$(NANVIX_DEPLOYMENT_MODE)" \
+		--memory-size "$(NANVIX_MEMORY_SIZE)" \
+		--output-dir "$(NANVIX_DIR)"
 
 distclean: clean
 	rm -rf $(NANVIX_DIR)
