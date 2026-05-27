@@ -5,10 +5,15 @@ A minimal example showing how to compile and run a "Hello World" C application o
 
 ## Prerequisites
 
-- [Docker](https://docs.docker.com/engine/install/)
+- [Docker](https://docs.docker.com/engine/install/) (Docker Desktop on Windows)
 - [GitHub CLI](https://cli.github.com/) (`gh`), authenticated (`gh auth login`)
 - [Python](https://www.python.org/) 3.12 or newer (used by `get-nanvix.py` for `make init`)
-- [KVM](https://github.com/nanvix/nanvix/blob/main/doc/setup.md#4-setup-kvm) enabled
+- [KVM](https://github.com/nanvix/nanvix/blob/main/doc/setup.md#4-setup-kvm) enabled (Linux hosts only)
+- On Windows: [Git for Windows](https://gitforwindows.org/) (provides Git Bash,
+  which bundles `bash` and `cygpath` via msys2-runtime) plus GNU `make` on
+  `PATH` (e.g. `choco install make`, or install [MSYS2](https://www.msys2.org/)
+  and use the MSYS2 shell). Hardware virtualisation (Hyper-V / WHPX) must be
+  enabled for `nanvixd.exe`.
 
 ## Quick Start
 
@@ -38,7 +43,10 @@ The following `make` variables can be overridden on the command line or in the e
 - `NANVIX_TOOLCHAIN_IMAGE` — Cross-compiler Docker image (pinned).
 - `NANVIX_TOOLCHAIN_DIR` — Cross-compiler install prefix inside the toolchain Docker image.
 - `NANVIX_MEMORY_SIZE` — MicroVM memory size used to select the release asset.
-- `NANVIX_DEPLOYMENT_MODE` — Deployment mode: `multi-process` (default) or `standalone`.
+- `NANVIX_DEPLOYMENT_MODE` — Deployment mode: `standalone` (default) or `multi-process`.
+- `NANVIX_HOST_OS` — Host OS that drives `docker run` and launches `nanvixd`:
+  `linux` or `windows`. Auto-detected from the build environment; override only
+  when cross-driving (e.g. fetching Windows artifacts from a Linux box).
 - `NANVIX_DIR` — Local directory for release artifacts.
 
 See the top of the [Makefile](Makefile) for current default values.
@@ -47,19 +55,48 @@ See the top of the [Makefile](Makefile) for current default values.
 
 Two deployment modes are supported, selected via `NANVIX_DEPLOYMENT_MODE`:
 
-- **`multi-process`** (default) — Guest applications run inside the Nanvix MicroVM, while the
-  system daemons run on the hosting platform as part of the trusted computing base.
-- **`standalone`** — Guest applications and the system daemons all
+- **`standalone`** (default) — Guest applications and the system daemons all
   run inside the Nanvix MicroVM.
+- **`multi-process`** — Guest applications run inside the Nanvix MicroVM, while the
+  system daemons run on the hosting platform as part of the trusted computing base.
 
 The release asset downloaded by `make init` is mode-specific, so switch modes by overriding the
 variable on every relevant `make` invocation (after re-running `init`):
 
 ```bash
 make distclean
-make init NANVIX_DEPLOYMENT_MODE=standalone
-make run  NANVIX_DEPLOYMENT_MODE=standalone
+make init NANVIX_DEPLOYMENT_MODE=multi-process
+make run  NANVIX_DEPLOYMENT_MODE=multi-process
 ```
+
+### Windows Hosts
+
+Native Windows is supported through the same `Makefile`, driven from Git Bash
+(with GNU `make` installed separately, e.g. `choco install make`) or from an
+MSYS2 shell. Only the `standalone` deployment mode (the default) is
+available: Windows releases ship `nanvixd.exe`, `mkimage.exe`, `kernel.elf`,
+`uservm.exe`, and the system-daemon ELFs in a separate `.zip` asset, but
+`multi-process` requires `linuxd` which is Linux-only.
+
+```bash
+# From Git Bash, in the project root:
+make init
+make
+make run
+```
+
+How this differs from a Linux host:
+
+- `make init` downloads both the Linux release tarball (for `libposix.a` /
+  `user.ld`, which the cross-compile inside the Linux Docker container needs)
+  and the Windows release zip (for the native host binaries). Both are merged
+  under `.nanvix/`.
+- `make` cross-compiles inside the Linux toolchain container via Docker Desktop;
+  the Makefile converts the MSYS-style workspace path with `cygpath -m` so the
+  bind mount resolves correctly, and drops the Unix `-u $(id -u):$(id -g)` flag
+  (Docker Desktop on Windows handles ownership through the bind mount).
+- `make run` launches `nanvixd.exe` natively (no Docker), printing the guest
+  console output to `CON`.
 
 ## Project Structure
 
@@ -90,17 +127,22 @@ The application is linked against:
 
 ### Running
 
-`nanvixd.elf` is the Nanvix daemon that boots a microkernel VM and runs your application inside it.
-The `-console-file /dev/stdout` flag redirects the application's console output to the terminal.
+`nanvixd` is the Nanvix daemon that boots a microkernel VM and runs your application inside it.
+The host-side executable suffix is host-specific: `nanvixd.elf` on Linux, `nanvixd.exe` on Windows
+(both are native host binaries — the `.elf` suffix on Linux is historical). The Makefile selects the
+right suffix automatically via `NANVIX_HOST_OS`.
+The `-console-file` flag redirects the application's console output to the terminal: the Makefile
+passes `/dev/stdout` on Linux and `CON` on Windows.
 
-In `multi-process` mode the application ELF is passed directly to `nanvixd.elf`. The guest
-application runs inside the Nanvix MicroVM, while the system daemons run on the hosting platform and
-are launched by `nanvixd.elf` from the release `bin/` directory.
+In `multi-process` mode (Linux only) the application ELF is passed directly to `nanvixd.elf`. The
+guest application runs inside the Nanvix MicroVM, while the system daemons run on the hosting
+platform and are launched by `nanvixd.elf` from the release `bin/` directory.
 
-In `standalone` mode the Makefile invokes `mkimage.elf` (a host-side tool shipped in the release
-`bin/` directory) to assemble an initrd image bundling the application together with system daemons.
-`nanvixd.elf` is then booted with that initrd as its payload, so the guest application and the
-system daemons all run together inside the Nanvix MicroVM.
+In `standalone` mode the Makefile invokes `mkimage` (`mkimage.elf` on Linux, `mkimage.exe` on
+Windows — both host-side tools shipped in the release `bin/` directory) to assemble an initrd image
+bundling the application together with the system daemons. `nanvixd` is then booted with that
+initrd as its payload, so the guest application and the system daemons all run together inside the
+Nanvix MicroVM.
 
 ## License
 

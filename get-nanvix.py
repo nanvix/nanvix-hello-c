@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -99,12 +100,33 @@ def main() -> int:
     parser.add_argument("--deployment-mode", required=True, help="Deployment mode.")
     parser.add_argument("--memory-size", required=True, help="MicroVM memory size.")
     parser.add_argument(
+        "--host-os",
+        default=_default_host_os(),
+        choices=["linux", "windows"],
+        help=(
+            "Host OS that will run nanvixd (default: auto-detected from sys.platform). "
+            "When 'windows', the Windows host-binary zip is downloaded and flat-extracted "
+            "into <output-dir>/bin/ in addition to the Linux release tarball (which "
+            "provides libposix.a / user.ld for the Docker-based cross-compile). "
+            "Only the 'standalone' deployment mode is supported on Windows."
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         required=True,
         type=Path,
         help="Output directory for release artifacts.",
     )
     args = parser.parse_args()
+
+    if args.host_os == "windows" and args.deployment_mode != "standalone":
+        print(
+            "ERROR: --host-os windows requires --deployment-mode standalone "
+            f"(got '{args.deployment_mode}'). On Windows, multi-process mode is not "
+            "supported because the system daemons must run inside the Nanvix MicroVM.",
+            file=sys.stderr,
+        )
+        return 1
 
     print(f"Downloading Nanvix release {args.release}...")
 
@@ -118,64 +140,130 @@ def main() -> int:
         "tagName,assets",
     )
     tag_name = release_info["tagName"]
+    assets: list[dict[str, Any]] = release_info.get("assets", [])
 
-    asset_prefix = (
-        f"nanvix-x86-{args.machine}-{args.deployment_mode}"
-        f"-release-{args.memory_size}"
+    # Always download the Linux tarball: it provides libposix.a and user.ld needed
+    # by the Docker-based cross-compile, plus a complete bin/ layout. On a Windows
+    # host the Windows zip is overlaid on top to add the native nanvixd.exe and
+    # mkimage.exe required for running and bundling locally.
+    linux_prefix = (
+        f"nanvix-x86-{args.machine}-{args.deployment_mode}-release-{args.memory_size}"
     )
-    asset_name = find_asset(release_info.get("assets", []), asset_prefix)
-    if not asset_name:
+    linux_asset = find_asset(assets, linux_prefix)
+    if not linux_asset:
         print(
-            f"ERROR: Could not find a release asset matching prefix '{asset_prefix}'.",
+            f"ERROR: Could not find a release asset matching prefix '{linux_prefix}'.",
             file=sys.stderr,
         )
         return 1
 
     print(f"  Release: {tag_name}")
-    print(f"  Asset: {asset_name}")
+    print(f"  Linux asset: {linux_asset}")
+
+    windows_asset = ""
+    if args.host_os == "windows":
+        windows_prefix = (
+            f"nanvix-windows-x86-{args.machine}-{args.deployment_mode}"
+            f"-release-{args.memory_size}"
+        )
+        windows_asset = find_asset(assets, windows_prefix)
+        if not windows_asset:
+            print(
+                f"ERROR: Could not find a Windows release asset matching prefix "
+                f"'{windows_prefix}'.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"  Windows asset: {windows_asset}")
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
-        run_gh(
-            "release",
-            "download",
-            args.release,
-            "--repo",
-            args.repo,
-            "--pattern",
-            asset_name,
-            "--dir",
-            str(tmp_path),
-        )
+        patterns = [linux_asset] + ([windows_asset] if windows_asset else [])
+        for pattern in patterns:
+            run_gh(
+                "release",
+                "download",
+                args.release,
+                "--repo",
+                args.repo,
+                "--pattern",
+                pattern,
+                "--dir",
+                str(tmp_path),
+            )
 
-        args.output_dir.mkdir(parents=True, exist_ok=True)
-        archive_path = tmp_path / asset_name
-        try:
-            with tarfile.open(archive_path, "r:bz2") as tar:
-                members: list[tarfile.TarInfo] = []
-                for member in tar.getmembers():
-                    # Equivalent of 'tar --strip-components=1': split on '/' so that a leading './'
-                    # counts as one component, matching GNU tar's behaviour (pathlib.Path would
-                    # silently normalise it away and we would strip the wrong component).
-                    parts = member.name.split("/")
-                    if len(parts) <= 1:
-                        continue
-                    stripped = "/".join(parts[1:])
-                    if not stripped:
-                        continue
-                    member.name = stripped
-                    members.append(member)
-                tar.extractall(args.output_dir, members=members, filter="data")
-        except (tarfile.TarError, OSError) as exc:
-            raise SystemExit(
-                f"ERROR: failed to extract '{archive_path}' into '{args.output_dir}': {exc}\n"
-                "The downloaded archive may be corrupted or incomplete. Try re-running "
-                "'make distclean init', and verify 'gh auth status' if the problem persists."
-            ) from exc
+        _extract_linux_tarball(tmp_path / linux_asset, args.output_dir)
+        if windows_asset:
+            _extract_windows_zip(tmp_path / windows_asset, args.output_dir / "bin")
 
     print()
     print(f"Done. Nanvix release extracted to {args.output_dir}/.")
     return 0
+
+
+def _default_host_os() -> str:
+    # 'win32' covers native CPython on Windows; 'cygwin' and 'msys' cover the
+    # Cygwin and MSYS2 Python builds, both of which run on a Windows host and
+    # therefore need the Windows host-binary zip even though they expose a
+    # Unix-like environment.
+    if sys.platform.startswith(("win", "cygwin", "msys")):
+        return "windows"
+    return "linux"
+
+
+def _extract_linux_tarball(archive_path: Path, output_dir: Path) -> None:
+    try:
+        with tarfile.open(archive_path, "r:bz2") as tar:
+            members: list[tarfile.TarInfo] = []
+            for member in tar.getmembers():
+                # Equivalent of 'tar --strip-components=1': split on '/' so that a leading './'
+                # counts as one component, matching GNU tar's behaviour (pathlib.Path would
+                # silently normalise it away and we would strip the wrong component).
+                parts = member.name.split("/")
+                if len(parts) <= 1:
+                    continue
+                stripped = "/".join(parts[1:])
+                if not stripped:
+                    continue
+                member.name = stripped
+                members.append(member)
+            tar.extractall(output_dir, members=members, filter="data")
+    except (tarfile.TarError, OSError) as exc:
+        raise SystemExit(
+            f"ERROR: failed to extract '{archive_path}' into '{output_dir}': {exc}\n"
+            "The downloaded archive may be corrupted or incomplete. Try re-running "
+            "'make distclean init', and verify 'gh auth status' if the problem persists."
+        ) from exc
+
+
+def _extract_windows_zip(archive_path: Path, output_dir: Path) -> None:
+    # The Windows release zip is flat (no top-level directory). Extract everything
+    # into <.nanvix>/bin/ so that nanvixd.exe, mkimage.exe, kernel.elf, uservm.exe
+    # and the daemon ELFs sit alongside the Linux-extracted contents.
+    output_dir.mkdir(parents=True, exist_ok=True)
+    base = output_dir.resolve()
+    try:
+        with zipfile.ZipFile(archive_path) as zf:
+            for info in zf.infolist():
+                # Defence in depth against path-traversal in crafted archives.
+                # Use Path.is_relative_to() against the resolved base directory:
+                # a raw string prefix check would let e.g. '../out_evil/file'
+                # escape '/tmp/out' into the sibling '/tmp/out_evil'.
+                target = (output_dir / info.filename).resolve()
+                if not target.is_relative_to(base):
+                    raise SystemExit(
+                        f"ERROR: refusing to extract suspicious path "
+                        f"'{info.filename}' from '{archive_path}'."
+                    )
+                zf.extract(info, output_dir)
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise SystemExit(
+            f"ERROR: failed to extract '{archive_path}' into '{output_dir}': {exc}\n"
+            "The downloaded archive may be corrupted or incomplete. Try re-running "
+            "'make distclean init', and verify 'gh auth status' if the problem persists."
+        ) from exc
 
 
 if __name__ == "__main__":
