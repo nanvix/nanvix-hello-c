@@ -35,6 +35,7 @@ The following `make` variables can be overridden on the command line or in the e
 - `NANVIX_REPO` — Nanvix GitHub repository.
 - `NANVIX_RELEASE` — Nanvix release tag to fetch (pinned).
 - `NANVIX_TOOLCHAIN_IMAGE` — Cross-compiler Docker image (pinned).
+- `NANVIX_TOOLCHAIN_DIR` — Cross-compiler install prefix inside the toolchain Docker image.
 - `NANVIX_MEMORY_SIZE` — MicroVM memory size used to select the release asset.
 - `NANVIX_DIR` — Local directory for release artifacts.
 

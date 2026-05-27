@@ -22,16 +22,16 @@ NANVIX_DIR ?= .nanvix
 NANVIX_MEMORY_SIZE ?= 128mb
 
 # Nanvix target machine (used to select the release asset).
-MACHINE := microvm
+NANVIX_MACHINE := microvm
 
 # Nanvix deployment mode (used to select the release asset).
-DEPLOYMENT_MODE := multi-process
+NANVIX_DEPLOYMENT_MODE := multi-process
 
 # Toolchain directory (set by the Docker image).
-TOOLCHAIN_DIR ?= /opt/nanvix
+NANVIX_TOOLCHAIN_DIR ?= /opt/nanvix
 
 # Cross-compiler and tools.
-CC := $(TOOLCHAIN_DIR)/bin/i686-nanvix-gcc
+CC := $(NANVIX_TOOLCHAIN_DIR)/bin/i686-nanvix-gcc
 
 # Compiler flags.
 CFLAGS := -std=c17
@@ -43,7 +43,7 @@ CFLAGS += -O2
 LIBPOSIX_A := $(NANVIX_DIR)/lib/libposix.a
 
 # C standard library (provided by the toolchain).
-LIBC_A := $(TOOLCHAIN_DIR)/i686-nanvix/lib/libc.a
+LIBC_A := $(NANVIX_TOOLCHAIN_DIR)/i686-nanvix/lib/libc.a
 
 # Linker flags.
 LDFLAGS := -z noexecstack -T $(NANVIX_DIR)/lib/user.ld
@@ -126,7 +126,7 @@ $(LIBPOSIX_A):
 	RELEASE_INFO=$$(gh release view "$(NANVIX_RELEASE)" --repo "$(NANVIX_REPO)" --json tagName,assets); \
 	TAG_NAME=$$(echo "$$RELEASE_INFO" | jq -r '.tagName'); \
 	ASSET_NAME=$$(echo "$$RELEASE_INFO" | jq -r \
-		'[.assets[] | select(.name | startswith("nanvix-x86-$(MACHINE)-$(DEPLOYMENT_MODE)-release-$(NANVIX_MEMORY_SIZE)"))][0].name'); \
+		'[.assets[] | select(.name | startswith("nanvix-x86-$(NANVIX_MACHINE)-$(NANVIX_DEPLOYMENT_MODE)-release-$(NANVIX_MEMORY_SIZE)"))][0].name'); \
 	if [ -z "$$ASSET_NAME" ] || [ "$$ASSET_NAME" = "null" ]; then \
 		echo "ERROR: Could not find a microvm multi-process release asset." >&2; \
 		exit 1; \
