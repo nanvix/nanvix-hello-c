@@ -12,7 +12,7 @@ A minimal example showing how to compile and run a "Hello World" C application o
 ## Quick Start
 
 ```bash
-# 1. Download the latest Nanvix release (provides nanvixd.elf, libposix.a, and user.ld).
+# 1. Download the pinned Nanvix release (provides nanvixd.elf, libposix.a, and user.ld).
 make init
 
 # 2. Build hello-c.elf using the Nanvix toolchain Docker image.
@@ -33,6 +33,7 @@ Hello, World from Nanvix!
 The following `make` variables can be overridden on the command line or in the environment:
 
 - `NANVIX_REPO` — Nanvix GitHub repository (default: `nanvix/nanvix`).
+- `NANVIX_RELEASE` — Nanvix release tag to fetch (pinned; default: `v0.15.26`).
 - `NANVIX_TOOLCHAIN_IMAGE` — Cross-compiler Docker image. Pinned manually; bump when the
   Nanvix release requires a newer toolchain ABI.
 - `NANVIX_MEMORY_SIZE` — MicroVM memory size used to select the release asset

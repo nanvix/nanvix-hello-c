@@ -8,6 +8,9 @@
 # Nanvix GitHub repository.
 NANVIX_REPO ?= nanvix/nanvix
 
+# Nanvix release tag to fetch (pinned).
+NANVIX_RELEASE ?= v0.15.26
+
 # Nanvix toolchain Docker image.
 # See: https://github.com/nanvix/toolchain-gcc/releases/tag/v2026.05.09-d3ba1c6
 NANVIX_TOOLCHAIN_IMAGE ?= ghcr.io/nanvix/toolchain-gcc:sha-d3ba1c6
@@ -106,11 +109,12 @@ $(BUILD_DIR):
 init: $(NANVIX_DIR)/lib/libposix.a
 
 $(NANVIX_DIR)/lib/libposix.a:
-	@echo "Downloading the latest Nanvix release..."
-	@RELEASE_INFO=$$(gh release view latest --repo "$(NANVIX_REPO)" --json tagName,assets); \
+	@echo "Downloading Nanvix release $(NANVIX_RELEASE)..."
+	@set -e; \
+	RELEASE_INFO=$$(gh release view "$(NANVIX_RELEASE)" --repo "$(NANVIX_REPO)" --json tagName,assets); \
 	TAG_NAME=$$(echo "$$RELEASE_INFO" | jq -r '.tagName'); \
 	ASSET_NAME=$$(echo "$$RELEASE_INFO" | jq -r \
-		'[.assets[] | select(.name | startswith("nanvix-microvm-multi-process-release-$(NANVIX_MEMORY_SIZE)"))][0].name'); \
+		'[.assets[] | select(.name | startswith("nanvix-x86-microvm-multi-process-release-$(NANVIX_MEMORY_SIZE)"))][0].name'); \
 	if [ -z "$$ASSET_NAME" ] || [ "$$ASSET_NAME" = "null" ]; then \
 		echo "ERROR: Could not find a microvm multi-process release asset." >&2; \
 		exit 1; \
@@ -120,7 +124,7 @@ $(NANVIX_DIR)/lib/libposix.a:
 	DOCKER_IMAGE="$(NANVIX_TOOLCHAIN_IMAGE)"; \
 	echo "  Docker image: $$DOCKER_IMAGE"; \
 	TMPDIR=$$(mktemp -d); \
-	gh release download latest --repo "$(NANVIX_REPO)" \
+	gh release download "$(NANVIX_RELEASE)" --repo "$(NANVIX_REPO)" \
 		--pattern "$$ASSET_NAME" \
 		--dir "$$TMPDIR"; \
 	mkdir -p $(NANVIX_DIR); \
