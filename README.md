@@ -32,13 +32,13 @@ Hello, World from Nanvix!
 
 The following `make` variables can be overridden on the command line or in the environment:
 
-- `NANVIX_REPO` — Nanvix GitHub repository (default: `nanvix/nanvix`).
-- `NANVIX_RELEASE` — Nanvix release tag to fetch (pinned; default: `v0.15.26`).
-- `NANVIX_TOOLCHAIN_IMAGE` — Cross-compiler Docker image. Pinned manually; bump when the
-  Nanvix release requires a newer toolchain ABI.
-- `NANVIX_MEMORY_SIZE` — MicroVM memory size used to select the release asset
-  (e.g. `128mb`, `256mb`; default: `128mb`).
-- `NANVIX_DIR` — Local directory for release artifacts (default: `.nanvix`).
+- `NANVIX_REPO` — Nanvix GitHub repository.
+- `NANVIX_RELEASE` — Nanvix release tag to fetch (pinned).
+- `NANVIX_TOOLCHAIN_IMAGE` — Cross-compiler Docker image (pinned).
+- `NANVIX_MEMORY_SIZE` — MicroVM memory size used to select the release asset.
+- `NANVIX_DIR` — Local directory for release artifacts.
+
+See the top of the [Makefile](Makefile) for current default values.
 
 ## Project Structure
 
