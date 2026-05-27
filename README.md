@@ -38,9 +38,28 @@ The following `make` variables can be overridden on the command line or in the e
 - `NANVIX_TOOLCHAIN_IMAGE` — Cross-compiler Docker image (pinned).
 - `NANVIX_TOOLCHAIN_DIR` — Cross-compiler install prefix inside the toolchain Docker image.
 - `NANVIX_MEMORY_SIZE` — MicroVM memory size used to select the release asset.
+- `NANVIX_DEPLOYMENT_MODE` — Deployment mode: `multi-process` (default) or `standalone`.
 - `NANVIX_DIR` — Local directory for release artifacts.
 
 See the top of the [Makefile](Makefile) for current default values.
+
+### Deployment Modes
+
+Two deployment modes are supported, selected via `NANVIX_DEPLOYMENT_MODE`:
+
+- **`multi-process`** (default) — Guest applications run inside the Nanvix MicroVM, while the
+  system daemons run on the hosting platform as part of the trusted computing base.
+- **`standalone`** — Guest applications and the system daemons all
+  run inside the Nanvix MicroVM.
+
+The release asset downloaded by `make init` is mode-specific, so switch modes by overriding the
+variable on every relevant `make` invocation (after re-running `init`):
+
+```bash
+make distclean
+make init NANVIX_DEPLOYMENT_MODE=standalone
+make run  NANVIX_DEPLOYMENT_MODE=standalone
+```
 
 ## Project Structure
 
@@ -73,6 +92,15 @@ The application is linked against:
 
 `nanvixd.elf` is the Nanvix daemon that boots a microkernel VM and runs your application inside it.
 The `-console-file /dev/stdout` flag redirects the application's console output to the terminal.
+
+In `multi-process` mode the application ELF is passed directly to `nanvixd.elf`. The guest
+application runs inside the Nanvix MicroVM, while the system daemons run on the hosting platform and
+are launched by `nanvixd.elf` from the release `bin/` directory.
+
+In `standalone` mode the Makefile invokes `mkimage.elf` (a host-side tool shipped in the release
+`bin/` directory) to assemble an initrd image bundling the application together with system daemons.
+`nanvixd.elf` is then booted with that initrd as its payload, so the guest application and the
+system daemons all run together inside the Nanvix MicroVM.
 
 ## License
 
