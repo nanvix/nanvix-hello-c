@@ -21,6 +21,12 @@ NANVIX_DIR ?= .nanvix
 # Nanvix MicroVM memory size (e.g. 128mb, 256mb).
 NANVIX_MEMORY_SIZE ?= 128mb
 
+# Nanvix deployment mode (multi-process or standalone).
+# - multi-process: guest applications run inside the Nanvix MicroVM;
+#                  system daemons run on the hosting platform, as part of the trusted computing base.
+# - standalone:    guest applications and system daemons all run inside the Nanvix MicroVM.
+NANVIX_DEPLOYMENT_MODE ?= multi-process
+
 # Toolchain directory (set by the Docker image).
 NANVIX_TOOLCHAIN_DIR ?= /opt/nanvix
 
@@ -30,9 +36,6 @@ NANVIX_TOOLCHAIN_DIR ?= /opt/nanvix
 
 # Nanvix target machine (used to select the release asset).
 NANVIX_MACHINE := microvm
-
-# Nanvix deployment mode (used to select the release asset).
-NANVIX_DEPLOYMENT_MODE := multi-process
 
 # Build output directory.
 BUILD_DIR := build
@@ -73,6 +76,26 @@ OBJECTS := $(SOURCES:%.c=$(BUILD_DIR)/%.o)
 # Output binary.
 BINARY := hello-c.elf
 
+# Standalone initrd image (built only when NANVIX_DEPLOYMENT_MODE=standalone).
+INITRD := $(BUILD_DIR)/hello-c.img
+
+# Tool used to assemble the standalone initrd image.
+MKIMAGE := $(NANVIX_DIR)/bin/mkimage.elf
+
+# System daemons bundled into the standalone initrd image.
+NANVIX_DAEMONS := \
+	$(NANVIX_DIR)/bin/procd.elf \
+	$(NANVIX_DIR)/bin/memd.elf \
+	$(NANVIX_DIR)/bin/vfsd.elf
+
+# Payload passed to nanvixd. In multi-process mode this is the app ELF; in
+# standalone mode it is an initrd image bundling the app and system daemons.
+ifeq ($(NANVIX_DEPLOYMENT_MODE),standalone)
+NANVIX_PAYLOAD := $(INITRD)
+else
+NANVIX_PAYLOAD := $(BUILD_DIR)/$(BINARY)
+endif
+
 #===============================================================================
 # Host vs. Container split
 #===============================================================================
@@ -103,8 +126,22 @@ $(BUILD_DIR)/$(BINARY): $(SOURCES) Makefile $(LIBPOSIX_A) | $(BUILD_DIR)
 endif
 
 # Run on Nanvix.
-run: all
-	$(NANVIX_DIR)/bin/nanvixd.elf -bin-dir $(NANVIX_DIR)/bin -console-file /dev/stdout -- $(BUILD_DIR)/$(BINARY)
+run: all $(NANVIX_PAYLOAD)
+	$(NANVIX_DIR)/bin/nanvixd.elf -bin-dir $(NANVIX_DIR)/bin -console-file /dev/stdout -- $(NANVIX_PAYLOAD)
+
+# Assemble the standalone initrd: bundle the app together with the system
+# daemons (procd, memd, vfsd) so they all run inside the Nanvix MicroVM. Each
+# entry has the form '<host-path>;<argv0>'. mkimage.elf is a host-side binary
+# shipped in the sysroot's bin/ despite its .elf suffix; it and the daemon
+# ELFs are populated by 'make init' alongside libposix.a, so they are listed
+# as explicit prerequisites to force a rebuild when the release contents
+# change (e.g. after switching modes or re-running 'make init').
+$(INITRD): $(BUILD_DIR)/$(BINARY) $(MKIMAGE) $(NANVIX_DAEMONS) | $(BUILD_DIR)
+	$(MKIMAGE) -o $@ \
+		'$(NANVIX_DIR)/bin/procd.elf;procd' \
+		'$(NANVIX_DIR)/bin/memd.elf;memd' \
+		'$(NANVIX_DIR)/bin/vfsd.elf;vfsd' \
+		'$(abspath $(BUILD_DIR)/$(BINARY));$(basename $(BINARY))'
 
 clean:
 	rm -rf $(BUILD_DIR)
@@ -131,6 +168,10 @@ $(BUILD_DIR):
 #===============================================================================
 
 init: $(LIBPOSIX_A)
+
+# mkimage and the system daemons are extracted together with libposix.a by
+# get-nanvix.py, so use libposix.a as the sentinel that triggers 'make init'.
+$(MKIMAGE) $(NANVIX_DAEMONS): $(LIBPOSIX_A)
 
 $(LIBPOSIX_A):
 	./get-nanvix.py \
