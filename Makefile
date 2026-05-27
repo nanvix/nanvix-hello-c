@@ -36,11 +36,14 @@ CFLAGS += -O2
 # Nanvix POSIX library (sentinel for a populated $(NANVIX_DIR)).
 LIBPOSIX_A := $(NANVIX_DIR)/lib/libposix.a
 
+# C standard library (provided by the toolchain).
+LIBC_A := $(TOOLCHAIN_DIR)/i686-nanvix/lib/libc.a
+
 # Linker flags.
 LDFLAGS := -z noexecstack -T $(NANVIX_DIR)/lib/user.ld
 
 # Libraries (order matters — use grouping to resolve circular dependencies).
-LIBRARIES := -Wl,--start-group $(LIBPOSIX_A) $(TOOLCHAIN_DIR)/i686-nanvix/lib/libc.a -Wl,--end-group
+LIBRARIES := -Wl,--start-group $(LIBPOSIX_A) $(LIBC_A) -Wl,--end-group
 
 # Build output directory.
 BUILD_DIR := build
