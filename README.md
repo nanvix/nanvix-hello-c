@@ -15,7 +15,7 @@ A minimal example showing how to compile and run a "Hello World" C application o
 # 1. Download the latest Nanvix release (provides nanvixd.elf, libposix.a, and user.ld).
 make init
 
-# 2. Build hello-c.elf using the Nanvix minimal Docker image.
+# 2. Build hello-c.elf using the Nanvix toolchain Docker image.
 make
 
 # 3. Run on Nanvix.
@@ -28,13 +28,23 @@ You should see:
 Hello, World from Nanvix!
 ```
 
+### Configuration
+
+The following `make` variables can be overridden on the command line or in the environment:
+
+- `NANVIX_REPO` — Nanvix GitHub repository (default: `nanvix/nanvix`).
+- `NANVIX_TOOLCHAIN_IMAGE` — Cross-compiler Docker image. Pinned manually; bump when the
+  Nanvix release requires a newer toolchain ABI.
+- `NANVIX_MEMORY_SIZE` — MicroVM memory size used to select the release asset
+  (e.g. `128mb`, `256mb`; default: `128mb`).
+- `NANVIX_DIR` — Local directory for release artifacts (default: `.nanvix`).
+
 ## Project Structure
 
 ```plain
 .
 ├── main.c          # Hello World source code
 ├── Makefile        # Build rules, init target, and cross-compilation
-├── Dockerfile      # Builds hello-c.elf inside the Nanvix Docker image
 └── .nanvix/        # Nanvix release artifacts (created by 'make init')
     ├── bin/        # nanvixd.elf, kernel.elf, uservm.elf, linuxd.elf
     └── lib/        # libposix.a, user.ld
@@ -46,8 +56,9 @@ Hello, World from Nanvix!
 
 Nanvix applications are cross-compiled using the `i686-nanvix-gcc` toolchain, which targets the
 Nanvix microkernel. The
-[`nanvix/toolchain`](https://hub.docker.com/r/nanvix/toolchain) minimal Docker image
-provides the full cross-compiler toolchain.
+[`ghcr.io/nanvix/toolchain-gcc`](https://github.com/nanvix/toolchain-gcc) Docker image
+provides the full cross-compiler toolchain. The host `make` invokes `make compile` inside that
+image via `docker run`, bind-mounting the workspace so build artifacts land directly in `build/`.
 
 The application is linked against:
 

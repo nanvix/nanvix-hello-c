@@ -8,8 +8,15 @@
 # Nanvix GitHub repository.
 NANVIX_REPO ?= nanvix/nanvix
 
+# Nanvix toolchain Docker image.
+# See: https://github.com/nanvix/toolchain-gcc/releases/tag/v2026.05.09-d3ba1c6
+NANVIX_TOOLCHAIN_IMAGE ?= ghcr.io/nanvix/toolchain-gcc:sha-d3ba1c6
+
 # Nanvix release directory (populated by 'make init').
 NANVIX_DIR ?= .nanvix
+
+# Nanvix MicroVM memory size (e.g. 128mb, 256mb).
+NANVIX_MEMORY_SIZE ?= 128mb
 
 # Toolchain directory (set by the Docker image).
 TOOLCHAIN_DIR ?= /opt/nanvix
@@ -29,45 +36,68 @@ LDFLAGS := -z noexecstack -T $(NANVIX_DIR)/lib/user.ld
 # Libraries (order matters — use grouping to resolve circular dependencies).
 LIBRARIES := -Wl,--start-group $(NANVIX_DIR)/lib/libposix.a $(TOOLCHAIN_DIR)/i686-nanvix/lib/libc.a -Wl,--end-group
 
+# Build output directory.
+BUILD_DIR := build
+
 # Source and object files.
 SOURCES := main.c
-OBJECTS := $(SOURCES:.c=.o)
+OBJECTS := $(SOURCES:%.c=$(BUILD_DIR)/%.o)
 
 # Output binary.
 BINARY := hello-c.elf
 
 #===============================================================================
+# Host vs. Container split
+#===============================================================================
+
+# The same Makefile is used on the host (which drives 'docker run') and inside
+# the Nanvix toolchain container (which performs the actual cross-compilation).
+# The host sets IN_NANVIX_CONTAINER=1 in the container's environment to select
+# the container-side recipes below.
+INSIDE_CONTAINER := $(IN_NANVIX_CONTAINER)
+
+#===============================================================================
 # Host Targets
 #===============================================================================
 
-all: build/$(BINARY)
+all: $(BUILD_DIR)/$(BINARY)
 
-# Build hello-c.elf inside Docker and export to build/.
-build/$(BINARY): $(SOURCES) Makefile Dockerfile $(NANVIX_DIR)/lib/libposix.a
-	DOCKER_BUILDKIT=1 docker build \
-		--build-arg BASE_IMAGE=$$(cat $(NANVIX_DIR)/.docker-image) \
-		--output type=local,dest=build .
-	@touch $@
+ifeq ($(INSIDE_CONTAINER),)
+# Build hello-c.elf inside the Nanvix toolchain Docker image, bind-mounting the
+# workspace so artifacts land directly in $(BUILD_DIR)/.
+$(BUILD_DIR)/$(BINARY): $(SOURCES) Makefile $(NANVIX_DIR)/lib/libposix.a | $(BUILD_DIR)
+	docker run --rm \
+		-u $$(id -u):$$(id -g) \
+		-e IN_NANVIX_CONTAINER=1 \
+		-v $(CURDIR):/workspace \
+		-w /workspace \
+		$$(cat $(NANVIX_DIR)/.docker-image) \
+		make compile
+endif
 
 # Run on Nanvix.
-run: build/$(BINARY)
-	$(NANVIX_DIR)/bin/nanvixd.elf -console-file /dev/stdout -- ./build/$(BINARY)
+run: all
+	$(NANVIX_DIR)/bin/nanvixd.elf -bin-dir $(NANVIX_DIR)/bin -console-file /dev/stdout -- $(BUILD_DIR)/$(BINARY)
 
 clean:
-	rm -f $(OBJECTS) $(BINARY)
-	rm -rf build
+	rm -rf $(BUILD_DIR)
 
 #===============================================================================
 # Container Targets (used inside Docker)
 #===============================================================================
 
-compile: $(BINARY)
+compile: $(BUILD_DIR)/$(BINARY)
 
-$(BINARY): $(OBJECTS)
+ifneq ($(INSIDE_CONTAINER),)
+$(BUILD_DIR)/$(BINARY): $(OBJECTS) | $(BUILD_DIR)
 	$(CC) $(LDFLAGS) $(OBJECTS) $(LIBRARIES) -o $@
+endif
 
-%.o: %.c
+$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR):
+	@mkdir -p $@
 
 #===============================================================================
 # Init — download the latest Nanvix release and resolve the Docker image tag
@@ -80,22 +110,14 @@ $(NANVIX_DIR)/lib/libposix.a:
 	@RELEASE_INFO=$$(gh release view latest --repo "$(NANVIX_REPO)" --json tagName,assets); \
 	TAG_NAME=$$(echo "$$RELEASE_INFO" | jq -r '.tagName'); \
 	ASSET_NAME=$$(echo "$$RELEASE_INFO" | jq -r \
-		'.assets[] | select(.name | startswith("nanvix-microvm-multi-process-release")) | .name'); \
-	if [ -z "$$ASSET_NAME" ]; then \
+		'[.assets[] | select(.name | startswith("nanvix-microvm-multi-process-release-$(NANVIX_MEMORY_SIZE)"))][0].name'); \
+	if [ -z "$$ASSET_NAME" ] || [ "$$ASSET_NAME" = "null" ]; then \
 		echo "ERROR: Could not find a microvm multi-process release asset." >&2; \
 		exit 1; \
 	fi; \
 	echo "  Release: $$TAG_NAME"; \
 	echo "  Asset: $$ASSET_NAME"; \
-	CARGO_TOML=$$(gh api "repos/$(NANVIX_REPO)/contents/Cargo.toml?ref=$$TAG_NAME" \
-		--jq '.content' 2>/dev/null | base64 -d) || true; \
-	CARGO_VERSION=$$(echo "$$CARGO_TOML" | grep -m1 '^version' | sed 's/.*"\(.*\)".*/\1/') || true; \
-	if [ -n "$$CARGO_VERSION" ]; then \
-		MAJOR_MINOR="$${CARGO_VERSION%.*}"; \
-		DOCKER_IMAGE="nanvix/toolchain:v$${MAJOR_MINOR}.x-minimal"; \
-	else \
-		DOCKER_IMAGE="nanvix/toolchain:latest-minimal"; \
-	fi; \
+	DOCKER_IMAGE="$(NANVIX_TOOLCHAIN_IMAGE)"; \
 	echo "  Docker image: $$DOCKER_IMAGE"; \
 	TMPDIR=$$(mktemp -d); \
 	gh release download latest --repo "$(NANVIX_REPO)" \
