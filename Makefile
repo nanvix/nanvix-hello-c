@@ -21,14 +21,25 @@ NANVIX_DIR ?= .nanvix
 # Nanvix MicroVM memory size (e.g. 128mb, 256mb).
 NANVIX_MEMORY_SIZE ?= 128mb
 
+# Toolchain directory (set by the Docker image).
+NANVIX_TOOLCHAIN_DIR ?= /opt/nanvix
+
+#===============================================================================
+# Constants
+#===============================================================================
+
 # Nanvix target machine (used to select the release asset).
 NANVIX_MACHINE := microvm
 
 # Nanvix deployment mode (used to select the release asset).
 NANVIX_DEPLOYMENT_MODE := multi-process
 
-# Toolchain directory (set by the Docker image).
-NANVIX_TOOLCHAIN_DIR ?= /opt/nanvix
+# Build output directory.
+BUILD_DIR := build
+
+#===============================================================================
+# Toolchain Configuration
+#===============================================================================
 
 # Cross-compiler and tools.
 CC := $(NANVIX_TOOLCHAIN_DIR)/bin/i686-nanvix-gcc
@@ -51,8 +62,9 @@ LDFLAGS := -z noexecstack -T $(NANVIX_DIR)/lib/user.ld
 # Libraries (order matters — use grouping to resolve circular dependencies).
 LIBRARIES := -Wl,--start-group $(LIBPOSIX_A) $(LIBC_A) -Wl,--end-group
 
-# Build output directory.
-BUILD_DIR := build
+#===============================================================================
+# Build Artifacts
+#===============================================================================
 
 # Source and object files.
 SOURCES := main.c
