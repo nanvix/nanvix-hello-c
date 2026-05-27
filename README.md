@@ -6,7 +6,8 @@ A minimal example showing how to compile and run a "Hello World" C application o
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/engine/install/)
-- [GitHub CLI](https://cli.github.com/) (`gh`)
+- [GitHub CLI](https://cli.github.com/) (`gh`), authenticated (`gh auth login`)
+- [Python](https://www.python.org/) 3.12 or newer (used by `get-nanvix.py` for `make init`)
 - [KVM](https://github.com/nanvix/nanvix/blob/main/doc/setup.md#4-setup-kvm) enabled
 
 ## Quick Start

@@ -98,7 +98,7 @@ $(BUILD_DIR)/$(BINARY): $(SOURCES) Makefile $(LIBPOSIX_A) | $(BUILD_DIR)
 		-e IN_NANVIX_CONTAINER=1 \
 		-v $(CURDIR):/workspace \
 		-w /workspace \
-		$$(cat $(NANVIX_DIR)/.docker-image) \
+		$(NANVIX_TOOLCHAIN_IMAGE) \
 		make compile
 endif
 
@@ -127,36 +127,19 @@ $(BUILD_DIR):
 	@mkdir -p $@
 
 #===============================================================================
-# Init — download the latest Nanvix release and resolve the Docker image tag
+# Init — download the Nanvix release
 #===============================================================================
 
 init: $(LIBPOSIX_A)
 
 $(LIBPOSIX_A):
-	@echo "Downloading Nanvix release $(NANVIX_RELEASE)..."
-	@set -e; \
-	RELEASE_INFO=$$(gh release view "$(NANVIX_RELEASE)" --repo "$(NANVIX_REPO)" --json tagName,assets); \
-	TAG_NAME=$$(echo "$$RELEASE_INFO" | jq -r '.tagName'); \
-	ASSET_NAME=$$(echo "$$RELEASE_INFO" | jq -r \
-		'[.assets[] | select(.name | startswith("nanvix-x86-$(NANVIX_MACHINE)-$(NANVIX_DEPLOYMENT_MODE)-release-$(NANVIX_MEMORY_SIZE)"))][0].name'); \
-	if [ -z "$$ASSET_NAME" ] || [ "$$ASSET_NAME" = "null" ]; then \
-		echo "ERROR: Could not find a microvm multi-process release asset." >&2; \
-		exit 1; \
-	fi; \
-	echo "  Release: $$TAG_NAME"; \
-	echo "  Asset: $$ASSET_NAME"; \
-	DOCKER_IMAGE="$(NANVIX_TOOLCHAIN_IMAGE)"; \
-	echo "  Docker image: $$DOCKER_IMAGE"; \
-	TMPDIR=$$(mktemp -d); \
-	gh release download "$(NANVIX_RELEASE)" --repo "$(NANVIX_REPO)" \
-		--pattern "$$ASSET_NAME" \
-		--dir "$$TMPDIR"; \
-	mkdir -p $(NANVIX_DIR); \
-	tar xjf "$$TMPDIR/$$ASSET_NAME" -C $(NANVIX_DIR) --strip-components=1; \
-	rm -rf "$$TMPDIR"; \
-	echo "$$DOCKER_IMAGE" > $(NANVIX_DIR)/.docker-image; \
-	echo ""; \
-	echo "Done. Nanvix release extracted to $(NANVIX_DIR)/."
+	./get-nanvix.py \
+		--repo "$(NANVIX_REPO)" \
+		--release "$(NANVIX_RELEASE)" \
+		--machine "$(NANVIX_MACHINE)" \
+		--deployment-mode "$(NANVIX_DEPLOYMENT_MODE)" \
+		--memory-size "$(NANVIX_MEMORY_SIZE)" \
+		--output-dir "$(NANVIX_DIR)"
 
 distclean: clean
 	rm -rf $(NANVIX_DIR)
