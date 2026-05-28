@@ -65,6 +65,19 @@ jobs:
           make run 2>&1 | tee run.log
           grep -q "Hello, World from Nanvix!" run.log
 
+      - name: Upload standalone payload for Windows run
+        if: success() && matrix.deployment-mode == 'standalone'
+        uses: actions/upload-artifact@v4
+        with:
+          name: standalone-${{ matrix.memory-size }}
+          # Only the initrd image is needed by the Windows runner: it bundles
+          # hello-c.elf and the system daemons that nanvixd.exe boots. The
+          # download step extracts this into 'build/' on the Windows runner
+          # so the file lands at build/hello-c.img where the Makefile expects.
+          path: build/hello-c.img
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -73,4 +86,114 @@ jobs:
           path: |
             build/
             run.log
+          if-no-files-found: ignore
+
+  # Windows host integration smoke test: verify that the Windows half of the
+  # Makefile + get-nanvix.py flow works end-to-end on a GitHub-hosted Windows
+  # runner. Empirically, windows-latest does expose enough virtualization for
+  # nanvixd.exe to boot the Nanvix MicroVM, so this job goes all the way to
+  # running 'make run-only' and asserting the expected guest greeting in
+  # stdout. If a future runner image drops that capability, the launch step
+  # below will start failing and this comment should be revisited.
+  #
+  # What this job covers:
+  #   - 'make init' on Windows downloads both the Linux tarball and the
+  #     Windows host-binary zip and lays them out under .nanvix/.
+  #   - The host-OS-aware Makefile (cygpath path translation, $(HOST_EXE)
+  #     suffix selection, standalone-only guard) parses and runs under
+  #     Git Bash + Chocolatey make.
+  #   - nanvixd.exe and mkimage.exe land at the expected paths and are
+  #     valid PE executables.
+  windows-smoke:
+    name: Windows smoke test (standalone, ${{ matrix.memory-size }})
+    needs: build-and-run
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        memory-size: ["128mb", "256mb"]
+    env:
+      NANVIX_MEMORY_SIZE: ${{ matrix.memory-size }}
+      NANVIX_DEPLOYMENT_MODE: standalone
+      NANVIX_HOST_OS: windows
+    defaults:
+      run:
+        # Git Bash (preinstalled on windows-latest, ships with Git for Windows)
+        # provides bash + cygpath via the bundled msys2-runtime. The only
+        # missing tool is GNU make, which we install via Chocolatey below.
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install GNU make
+        shell: pwsh
+        run: choco install make --no-progress --yes
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download standalone payload from Linux build
+        uses: actions/download-artifact@v4
+        with:
+          name: standalone-${{ matrix.memory-size }}
+          # The artifact contains just 'hello-c.img' (a single-file upload
+          # drops the directory prefix), so extract it under 'build/' where
+          # the Makefile expects to find it.
+          path: build
+
+      - name: Download Nanvix release (Windows host binaries)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: make init
+
+      - name: Verify Windows host binaries are present and well-formed
+        run: |
+          set -euo pipefail
+          # build/hello-c.img is the standalone payload bundling hello-c.elf
+          # plus the system daemons; it is what nanvixd.exe boots, so it is
+          # the only build/ artifact actually needed at run time.
+          for f in .nanvix/bin/nanvixd.exe \
+                   .nanvix/bin/mkimage.exe \
+                   .nanvix/bin/kernel.elf \
+                   build/hello-c.img; do
+            test -s "$f" || { echo "MISSING OR EMPTY: $f" >&2; exit 1; }
+          done
+          # Confirm the .exe files are real PE images (first 2 bytes 'MZ').
+          for f in .nanvix/bin/nanvixd.exe .nanvix/bin/mkimage.exe; do
+            head -c 2 "$f" | grep -q '^MZ' \
+              || { echo "NOT A PE EXECUTABLE: $f" >&2; exit 1; }
+          done
+          echo "Windows host binaries OK."
+
+      - name: Launch nanvixd.exe via 'make run-only'
+        # Run the Windows host launcher end-to-end against the standalone image
+        # downloaded from the Linux build job. This exercises the Makefile's
+        # invocation path (NANVIXD selection, -bin-dir, -console-file plumbing,
+        # NANVIX_PAYLOAD resolution) and confirms the app prints its expected
+        # greeting from inside the MicroVM. GitHub-hosted windows-latest
+        # runners turn out to expose enough virtualization for nanvixd.exe to
+        # boot, so we treat anything other than a clean run + correct stdout
+        # as a CI failure.
+        run: |
+          set -euo pipefail
+          make run-only NANVIX_CONSOLE=console.log 2>&1 | tee run.log
+          echo "--- console.log ---"
+          cat console.log 2>/dev/null || true
+          grep -q "Hello, World from Nanvix!" run.log \
+            || { echo "ERROR: expected greeting not found in run.log" >&2; exit 1; }
+          echo "nanvixd.exe ran the standalone image successfully."
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hello-c-windows-standalone-${{ matrix.memory-size }}
+          path: |
+            build/
+            .nanvix/bin/
+            run.log
+            console.log
           if-no-files-found: ignore
