@@ -21,7 +21,7 @@ A minimal example showing how to compile and run a "Hello World" C application o
 # 1. Download the Nanvix release.
 make init
 
-# 2. Build hello-c.elf using the Nanvix toolchain Docker image.
+# 2. Build hello-c.elf using the Nanvix SDK Docker image.
 make
 
 # 3. Run on Nanvix.
@@ -40,10 +40,10 @@ The following `make` variables can be overridden on the command line or in the e
 
 - `NANVIX_REPO` — Nanvix GitHub repository.
 - `NANVIX_RELEASE` — Nanvix release tag to fetch (pinned).
-- `NANVIX_TOOLCHAIN_IMAGE` — Cross-compiler Docker image (pinned).
-- `NANVIX_TOOLCHAIN_DIR` — Cross-compiler install prefix inside the toolchain Docker image.
+- `NANVIX_SDK_IMAGE` — SDK Docker image (pinned by digest).
+- `NANVIX_SDK_DIR` — SDK install prefix inside the Docker image.
 - `NANVIX_MEMORY_SIZE` — MicroVM memory size used to select the release asset.
-- `NANVIX_DEPLOYMENT_MODE` — Deployment mode: `standalone` (default) or `multi-process`.
+- `NANVIX_DEPLOYMENT_MODE` — Deployment mode: `standalone` (default) or `single-process`.
 - `NANVIX_HOST_OS` — Host OS that drives `docker run` and launches `nanvixd`:
   `linux` or `windows`. Auto-detected from the build environment; override only
   when cross-driving (e.g. fetching Windows artifacts from a Linux box).
@@ -57,7 +57,7 @@ Two deployment modes are supported, selected via `NANVIX_DEPLOYMENT_MODE`:
 
 - **`standalone`** (default) — Guest applications and the system daemons all
   run inside the Nanvix MicroVM.
-- **`multi-process`** — Guest applications run inside the Nanvix MicroVM, while the
+- **`single-process`** — Guest applications run inside the Nanvix MicroVM, while the
   system daemons run on the hosting platform as part of the trusted computing base.
 
 The release asset downloaded by `make init` is mode-specific, so switch modes by overriding the
@@ -65,8 +65,8 @@ variable on every relevant `make` invocation (after re-running `init`):
 
 ```bash
 make distclean
-make init NANVIX_DEPLOYMENT_MODE=multi-process
-make run  NANVIX_DEPLOYMENT_MODE=multi-process
+make init NANVIX_DEPLOYMENT_MODE=single-process
+make run  NANVIX_DEPLOYMENT_MODE=single-process
 ```
 
 ### Windows Hosts
@@ -76,7 +76,7 @@ Native Windows is supported through the same `Makefile`, driven from Git Bash
 MSYS2 shell. Only the `standalone` deployment mode (the default) is
 available: Windows releases ship `nanvixd.exe`, `mkimage.exe`, `kernel.elf`,
 `uservm.exe`, and the system-daemon ELFs in a separate `.zip` asset, but
-`multi-process` requires `linuxd` which is Linux-only.
+`single-process` requires `linuxd` which is Linux-only.
 
 ```bash
 # From Git Bash, in the project root:
@@ -87,11 +87,9 @@ make run
 
 How this differs from a Linux host:
 
-- `make init` downloads both the Linux release tarball (for `libposix.a` /
-  `user.ld`, which the cross-compile inside the Linux Docker container needs)
-  and the Windows release zip (for the native host binaries). Both are merged
-  under `.nanvix/`.
-- `make` cross-compiles inside the Linux toolchain container via Docker Desktop;
+- `make init` downloads the Linux runtime tarball and the Windows host-binary
+  zip. Both are merged under `.nanvix/`.
+- `make` cross-compiles inside the Linux SDK container via Docker Desktop;
   the Makefile converts the MSYS-style workspace path with `cygpath -m` so the
   bind mount resolves correctly, and drops the Unix `-u $(id -u):$(id -g)` flag
   (Docker Desktop on Windows handles ownership through the bind mount).
@@ -105,25 +103,20 @@ How this differs from a Linux host:
 ├── main.c          # Hello World source code
 ├── Makefile        # Build rules, init target, and cross-compilation
 └── .nanvix/        # Nanvix release artifacts (created by 'make init')
-    ├── bin/        # nanvixd.elf, kernel.elf, uservm.elf, linuxd.elf
-    └── lib/        # libposix.a, user.ld
+    └── bin/        # nanvixd.elf, kernel.elf, uservm.elf, linuxd.elf
 ```
 
 ## How It Works
 
 ### Cross-Compilation
 
-Nanvix applications are cross-compiled using the `i686-nanvix-gcc` toolchain, which targets the
-Nanvix microkernel. The
-[`ghcr.io/nanvix/toolchain-gcc`](https://github.com/nanvix/toolchain-gcc) Docker image
-provides the full cross-compiler toolchain. The host `make` invokes `make compile` inside that
-image via `docker run`, bind-mounting the workspace so build artifacts land directly in `build/`.
+Nanvix applications are cross-compiled with Clang in the versioned
+[`nanvix-sdk-c-clang`](https://github.com/nanvix/sdk) image. The host `make`
+invokes `make compile` inside that image via `docker run`, bind-mounting the
+workspace so build artifacts land directly in `build/`.
 
-The application is linked against:
-
-- **`libposix.a`** — Nanvix POSIX compatibility layer (from the Nanvix release)
-- **`libc.a`** — Newlib C library (from the toolchain)
-- **`user.ld`** — Linker script defining the Nanvix user-space memory layout (from the Nanvix release)
+The SDK Clang driver supplies Nanvix libc, compiler-rt, `crt0.o`, and
+`user.ld`. Downloaded release artifacts are used only to run the application.
 
 ### Running
 
@@ -134,7 +127,7 @@ right suffix automatically via `NANVIX_HOST_OS`.
 The `-console-file` flag redirects the application's console output to the terminal: the Makefile
 passes `/dev/stdout` on Linux and `CON` on Windows.
 
-In `multi-process` mode (Linux only) the application ELF is passed directly to `nanvixd.elf`. The
+In `single-process` mode (Linux only) the application ELF is passed directly to `nanvixd.elf`. The
 guest application runs inside the Nanvix MicroVM, while the system daemons run on the hosting
 platform and are launched by `nanvixd.elf` from the release `bin/` directory.
 

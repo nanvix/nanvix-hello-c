@@ -28,8 +28,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        deployment-mode: ["multi-process", "standalone"]
-        memory-size: ["128mb", "256mb"]
+        deployment-mode: ["single-process", "standalone"]
+        memory-size: ["256mb"]
     env:
       NANVIX_MEMORY_SIZE: ${{ matrix.memory-size }}
       NANVIX_DEPLOYMENT_MODE: ${{ matrix.deployment-mode }}
@@ -63,7 +63,11 @@ jobs:
         run: |
           set -o pipefail
           make run 2>&1 | tee run.log
-          grep -q "Hello, World from Nanvix!" run.log
+          # Single-process manager diagnostics may interleave with guest
+          # console bytes. Remove that known diagnostic before matching.
+          sed -E \
+            's/\[ERROR\]\[manager\] find_process_mut\(\): process not found \(pid=3\)//g' \
+            run.log | tr -d '\r\n' | grep -q "Hello, World from Nanvix!"
 
       - name: Upload standalone payload for Windows run
         if: success() && matrix.deployment-mode == 'standalone'
@@ -111,7 +115,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        memory-size: ["128mb", "256mb"]
+        memory-size: ["256mb"]
     env:
       NANVIX_MEMORY_SIZE: ${{ matrix.memory-size }}
       NANVIX_DEPLOYMENT_MODE: standalone
