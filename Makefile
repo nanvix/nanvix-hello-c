@@ -8,27 +8,28 @@
 # Nanvix GitHub repository.
 NANVIX_REPO ?= nanvix/nanvix
 
-# Nanvix release tag to fetch (pinned).
-NANVIX_RELEASE ?= v0.15.26
+# Nanvix release tag embedded in the SDK (pinned).
+NANVIX_RELEASE ?= v0.20.0
 
-# Nanvix toolchain Docker image.
-# See: https://github.com/nanvix/toolchain-gcc/releases/tag/v2026.05.09-d3ba1c6
-NANVIX_TOOLCHAIN_IMAGE ?= ghcr.io/nanvix/toolchain-gcc:sha-d3ba1c6
+# Nanvix SDK Docker image (pinned by digest).
+NANVIX_SDK_IMAGE_REPO ?= ghcr.io/nanvix/nanvix-sdk-c-clang
+NANVIX_SDK_IMAGE_HASH ?= f61737cb0780e6a2058c6d0bdf8ae5562db18de437173b2bcbbe6973abd3689f
+NANVIX_SDK_IMAGE ?= $(NANVIX_SDK_IMAGE_REPO)@sha256:$(NANVIX_SDK_IMAGE_HASH)
 
 # Nanvix release directory (populated by 'make init').
 NANVIX_DIR ?= .nanvix
 
-# Nanvix MicroVM memory size (e.g. 128mb, 256mb).
-NANVIX_MEMORY_SIZE ?= 128mb
+# Nanvix MicroVM memory size.
+NANVIX_MEMORY_SIZE ?= 256mb
 
-# Nanvix deployment mode (multi-process or standalone).
-# - multi-process: guest applications run inside the Nanvix MicroVM;
-#                  system daemons run on the hosting platform, as part of the trusted computing base.
-# - standalone:    guest applications and system daemons all run inside the Nanvix MicroVM.
+# Nanvix deployment mode (single-process or standalone).
+# - single-process: guest applications run inside the Nanvix MicroVM;
+#                   system daemons run on the hosting platform.
+# - standalone:     guest applications and system daemons run inside the Nanvix MicroVM.
 NANVIX_DEPLOYMENT_MODE ?= standalone
 
-# Toolchain directory (set by the Docker image).
-NANVIX_TOOLCHAIN_DIR ?= /opt/nanvix
+# SDK directory (set by the Docker image).
+NANVIX_SDK_DIR ?= /opt/nanvix
 
 #===============================================================================
 # Constants
@@ -82,29 +83,19 @@ native_path = $(1)
 endif
 
 #===============================================================================
-# Toolchain Configuration
+# SDK Configuration
 #===============================================================================
 
-# Cross-compiler and tools.
-CC := $(NANVIX_TOOLCHAIN_DIR)/bin/i686-nanvix-gcc
+# Cross-compiler.
+CC := $(NANVIX_SDK_DIR)/bin/clang
 
 # Compiler flags.
 CFLAGS := -std=c17
-CFLAGS += -m32 -march=pentiumpro -Wa,-march=pentiumpro
 CFLAGS += -Wall -Wextra -Werror
 CFLAGS += -O2
 
-# Nanvix POSIX library (sentinel for a populated $(NANVIX_DIR)).
-LIBPOSIX_A := $(NANVIX_DIR)/lib/libposix.a
-
-# C standard library (provided by the toolchain).
-LIBC_A := $(NANVIX_TOOLCHAIN_DIR)/i686-nanvix/lib/libc.a
-
 # Linker flags.
-LDFLAGS := -z noexecstack -T $(NANVIX_DIR)/lib/user.ld
-
-# Libraries (order matters — use grouping to resolve circular dependencies).
-LIBRARIES := -Wl,--start-group $(LIBPOSIX_A) $(LIBC_A) -Wl,--end-group
+LDFLAGS := -Wl,-z,noexecstack
 
 #===============================================================================
 # Build Artifacts
@@ -147,7 +138,7 @@ endif
 #===============================================================================
 
 # The same Makefile is used on the host (which drives 'docker run') and inside
-# the Nanvix toolchain container (which performs the actual cross-compilation).
+# the Nanvix SDK container (which performs the actual cross-compilation).
 # The host sets IN_NANVIX_CONTAINER=1 in the container's environment to select
 # the container-side recipes below.
 INSIDE_CONTAINER := $(IN_NANVIX_CONTAINER)
@@ -159,15 +150,15 @@ INSIDE_CONTAINER := $(IN_NANVIX_CONTAINER)
 all: $(BUILD_DIR)/$(BINARY)
 
 ifeq ($(INSIDE_CONTAINER),)
-# Build hello-c.elf inside the Nanvix toolchain Docker image, bind-mounting the
+# Build hello-c.elf inside the Nanvix SDK Docker image, bind-mounting the
 # workspace so artifacts land directly in $(BUILD_DIR)/.
-$(BUILD_DIR)/$(BINARY): $(SOURCES) Makefile $(LIBPOSIX_A) | $(BUILD_DIR)
+$(BUILD_DIR)/$(BINARY): $(SOURCES) Makefile | $(BUILD_DIR)
 	docker run --rm \
 		$(DOCKER_USER_FLAG) \
 		-e IN_NANVIX_CONTAINER=1 \
 		-v "$(DOCKER_WORKSPACE)":/workspace \
 		-w /workspace \
-		$(NANVIX_TOOLCHAIN_IMAGE) \
+		$(NANVIX_SDK_IMAGE) \
 		make compile
 endif
 
@@ -187,7 +178,7 @@ run-only: $(NANVIXD)
 # daemons (procd, memd, vfsd) so they all run inside the Nanvix MicroVM. Each
 # entry has the form '<host-path>;<argv0>'. mkimage.elf is a host-side binary
 # shipped in the sysroot's bin/ despite its .elf suffix; it and the daemon
-# ELFs are populated by 'make init' alongside libposix.a, so they are listed
+# ELFs are populated by 'make init', so they are listed
 # as explicit prerequisites to force a rebuild when the release contents
 # change (e.g. after switching modes or re-running 'make init').
 $(INITRD): $(BUILD_DIR)/$(BINARY) $(MKIMAGE) $(NANVIX_DAEMONS) | $(BUILD_DIR)
@@ -208,7 +199,7 @@ compile: $(BUILD_DIR)/$(BINARY)
 
 ifneq ($(INSIDE_CONTAINER),)
 $(BUILD_DIR)/$(BINARY): $(OBJECTS) | $(BUILD_DIR)
-	$(CC) $(LDFLAGS) $(OBJECTS) $(LIBRARIES) -o $@
+	$(CC) $(LDFLAGS) $(OBJECTS) -o $@
 endif
 
 $(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
@@ -233,12 +224,9 @@ NANVIX_STAMP := $(NANVIX_DIR)/.init-stamp-$(NANVIX_HOST_OS)-$(NANVIX_RELEASE)-$(
 
 init: $(NANVIX_STAMP)
 
-# libposix.a, nanvixd, mkimage and the system daemons are all populated by
-# get-nanvix.py as side effects of the stamp recipe. If the stamp exists but
-# one of these files is missing (e.g. a partial cleanup deleted only some of
-# them), the recipe below removes the stale stamp and re-runs the downloader
-# instead of failing with "No rule to make target ...".
-$(LIBPOSIX_A) $(NANVIXD) $(MKIMAGE) $(NANVIX_DAEMONS): $(NANVIX_STAMP)
+# Runtime binaries are populated by get-nanvix.py as side effects of the stamp
+# recipe. If the stamp exists but one is missing, rerun the downloader.
+$(NANVIXD) $(MKIMAGE) $(NANVIX_DAEMONS): $(NANVIX_STAMP)
 	@if [ ! -e "$@" ]; then \
 		echo "Stamp $(NANVIX_STAMP) exists but $@ is missing; re-running 'make init'."; \
 		rm -f "$(NANVIX_STAMP)"; \

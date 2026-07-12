@@ -28,8 +28,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        deployment-mode: ["multi-process", "standalone"]
-        memory-size: ["128mb", "256mb"]
+        deployment-mode: ["single-process", "standalone"]
+        memory-size: ["256mb"]
     env:
       NANVIX_MEMORY_SIZE: ${{ matrix.memory-size }}
       NANVIX_DEPLOYMENT_MODE: ${{ matrix.deployment-mode }}
@@ -111,7 +111,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        memory-size: ["128mb", "256mb"]
+        memory-size: ["256mb"]
     env:
       NANVIX_MEMORY_SIZE: ${{ matrix.memory-size }}
       NANVIX_DEPLOYMENT_MODE: standalone

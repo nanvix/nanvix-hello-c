@@ -106,8 +106,7 @@ def main() -> int:
         help=(
             "Host OS that will run nanvixd (default: auto-detected from sys.platform). "
             "When 'windows', the Windows host-binary zip is downloaded and flat-extracted "
-            "into <output-dir>/bin/ in addition to the Linux release tarball (which "
-            "provides libposix.a / user.ld for the Docker-based cross-compile). "
+            "into <output-dir>/bin/ in addition to the Linux runtime tarball. "
             "Only the 'standalone' deployment mode is supported on Windows."
         ),
     )
@@ -122,7 +121,7 @@ def main() -> int:
     if args.host_os == "windows" and args.deployment_mode != "standalone":
         print(
             "ERROR: --host-os windows requires --deployment-mode standalone "
-            f"(got '{args.deployment_mode}'). On Windows, multi-process mode is not "
+            f"(got '{args.deployment_mode}'). On Windows, single-process mode is not "
             "supported because the system daemons must run inside the Nanvix MicroVM.",
             file=sys.stderr,
         )
@@ -142,10 +141,9 @@ def main() -> int:
     tag_name = release_info["tagName"]
     assets: list[dict[str, Any]] = release_info.get("assets", [])
 
-    # Always download the Linux tarball: it provides libposix.a and user.ld needed
-    # by the Docker-based cross-compile, plus a complete bin/ layout. On a Windows
-    # host the Windows zip is overlaid on top to add the native nanvixd.exe and
-    # mkimage.exe required for running and bundling locally.
+    # Always download the Linux runtime tarball for its complete bin/ layout.
+    # On Windows, overlay the native host binaries used to run and bundle the
+    # standalone guest.
     linux_prefix = (
         f"nanvix-x86-{args.machine}-{args.deployment_mode}-release-{args.memory_size}"
     )
