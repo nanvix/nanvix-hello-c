@@ -63,7 +63,11 @@ jobs:
         run: |
           set -o pipefail
           make run 2>&1 | tee run.log
-          grep -q "Hello, World from Nanvix!" run.log
+          # Single-process manager diagnostics may interleave with guest
+          # console bytes. Remove that known diagnostic before matching.
+          sed -E \
+            's/\[ERROR\]\[manager\] find_process_mut\(\): process not found \(pid=3\)//g' \
+            run.log | tr -d '\r\n' | grep -q "Hello, World from Nanvix!"
 
       - name: Upload standalone payload for Windows run
         if: success() && matrix.deployment-mode == 'standalone'
