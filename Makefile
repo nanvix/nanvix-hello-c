@@ -13,7 +13,7 @@ NANVIX_RELEASE ?= v0.20.0
 
 # Nanvix SDK Docker image (pinned by digest).
 NANVIX_SDK_IMAGE_REPO ?= ghcr.io/nanvix/nanvix-sdk-c-clang
-NANVIX_SDK_IMAGE_HASH ?= f61737cb0780e6a2058c6d0bdf8ae5562db18de437173b2bcbbe6973abd3689f
+NANVIX_SDK_IMAGE_HASH ?= 880ed7e6a20fe9bf2536b1b3ba9bdbbd067a48f043ec9131d3dd398c65f11f35
 NANVIX_SDK_IMAGE ?= $(NANVIX_SDK_IMAGE_REPO)@sha256:$(NANVIX_SDK_IMAGE_HASH)
 
 # Nanvix release directory (populated by 'make init').
